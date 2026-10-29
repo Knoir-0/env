@@ -1,0 +1,84 @@
+# ==============================================================================
+# Brewfile - Homebrew Package Manifest for macOS Development Workstation
+# ==============================================================================
+# Usage:
+#   brew bundle --file=./Brewfile           # Install all formulae and casks
+#   brew bundle check --file=./Brewfile     # Verify if all packages are installed
+#   brew bundle --cleanup --file=./Brewfile # Uninstall packages not listed here
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# CLI Formulae & Development Tools
+# ------------------------------------------------------------------------------
+# Distributed version control system
+brew "git"
+# Git extension for versioning large files
+brew "git-lfs"
+# Latest stable Node.js runtime environment (includes npm and npx)
+brew "node"
+# Latest stable OpenJDK (Java Development Kit)
+brew "openjdk"
+# Cross-platform build system generator (for C/C++ projects like biotech)
+brew "cmake"
+# Docker command-line interface
+brew "docker"
+# Docker Compose multi-container application tool
+brew "docker-compose"
+# Kubernetes command-line interface (CLI)
+brew "kubectl"
+# Local Kubernetes cluster runner
+brew "minikube"
+# The Kubernetes package manager
+brew "helm"
+# Terminal-based UI dashboard for Kubernetes clusters
+brew "k9s"
+# Fast line-oriented recursive search tool (grep alternative)
+brew "ripgrep"
+
+# ------------------------------------------------------------------------------
+# GUI Applications & System Utilities (Casks)
+# ------------------------------------------------------------------------------
+
+# --- Containers & DevOps ---
+# Docker Desktop GUI application, container daemon, and built-in Kubernetes
+cask "docker-desktop"
+
+# --- Embedded & Hardware Development ---
+# Official utility to flash and preconfigure Raspberry Pi OS images
+cask "raspberry-pi-imager"
+
+# --- AI & Code Editors ---
+# AI-first code editor built on VS Code
+cask "cursor"
+# Extensible code editor from Microsoft
+cask "visual-studio-code"
+# Official GitHub Desktop client
+cask "github"
+# Local large language model runner & CLI
+cask "ollama-app"
+# Google Antigravity agent orchestration platform
+cask "antigravity"
+
+# --- Web Browsers ---
+# Mozilla Firefox web browser
+cask "firefox"
+
+# --- 3D Printing & CAD Design ---
+# Parametric 3D CAD modeler
+cask "freecad"
+# Open-source slicer for 3D printers
+cask "orcaslicer"
+# Free and open-source 3D creation and mesh modeling suite
+cask "blender"
+
+# --- Office & Productivity ---
+# Free and open-source office productivity suite
+cask "libreoffice"
+
+# --- Productivity & System Utilities ---
+# Lightweight keyboard-driven clipboard manager
+cask "maccy"
+# Independent scroll direction for mouse and trackpad
+cask "scroll-reverser"
+# Menu bar utility to keep your Mac awake
+cask "caffeine"
