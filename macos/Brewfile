@@ -18,6 +18,8 @@ brew "git-lfs"
 brew "node"
 # Latest stable OpenJDK (Java Development Kit)
 brew "openjdk"
+# Latest stable Python 3 runtime environment (includes pip)
+brew "python"
 # Cross-platform build system generator (for C/C++ projects like biotech)
 brew "cmake"
 # Docker command-line interface
@@ -50,6 +52,8 @@ cask "raspberry-pi-imager"
 # --- AI & Code Editors ---
 # AI-first code editor built on VS Code
 cask "cursor"
+# High-performance, multiplayer code editor
+cask "zed"
 # Extensible code editor from Microsoft
 cask "visual-studio-code"
 # Official GitHub Desktop client

@@ -39,7 +39,70 @@ brew bundle --file=./macos/Brewfile
 
 ---
 
-## Installed Software Inventory
+## Linux Workstation Setup
+
+The Linux environment is automated using [`linux/setup_linux.sh`](linux/setup_linux.sh), which reads [`linux/packages.conf`](linux/packages.conf). GUI apps are installed from Flathub first, then official AppImages. CLI tools that have no Flatpak or AppImage are installed from distro packages or official upstream binaries. Docker Engine (not Docker Desktop) and Ollama use their official install scripts.
+
+Supported families: Debian/Ubuntu, Fedora/RHEL, and Arch. Architectures: `x86_64` and `aarch64`.
+
+### Quickstart
+
+```bash
+chmod +x linux/setup_linux.sh
+./linux/setup_linux.sh
+```
+
+### Script Modes & Flags
+
+- **Audit / Check status** (no changes made):
+  ```bash
+  ./linux/setup_linux.sh --check
+  ```
+- **Dry run simulation** (previews actions without installing):
+  ```bash
+  ./linux/setup_linux.sh --dry-run
+  ```
+- **Help menu**:
+  ```bash
+  ./linux/setup_linux.sh --help
+  ```
+
+### Linux Software Inventory
+
+| Application | Source | Identifier / location | Notes |
+| :--- | :--- | :--- | :--- |
+| Git, Git LFS | Distro package | `git`, `git-lfs` | Installed during bootstrap |
+| Python 3, pip | Distro package | `python3`, `python3-pip` | General-purpose language and package manager |
+| Node.js | Official binary | `~/.local/opt/node` | Latest Current tarball from nodejs.org |
+| OpenJDK | Official binary | `~/.local/opt/openjdk` | Latest Eclipse Temurin GA |
+| CMake | Official binary | `~/.local/opt/cmake` | Kitware GitHub release |
+| kubectl, minikube, helm, k9s, ripgrep | Official binary | `~/.local/bin` | Upstream release artifacts |
+| Docker Engine + Compose | Official installer | `get.docker.com` | Replaces Docker Desktop on Linux |
+| Ollama | Official installer | `ollama.com/install.sh` | No Flatpak or AppImage |
+| Raspberry Pi Imager | Flathub | `org.raspberrypi.rpi-imager` | |
+| Visual Studio Code | Flathub | `com.visualstudio.code` | |
+| GitHub Desktop | Flathub | `io.github.shiftey.Desktop` | Linux community fork |
+| Firefox | Flathub | `org.mozilla.firefox` | |
+| FreeCAD | Flathub | `org.freecad.FreeCAD` | |
+| OrcaSlicer | Flathub | `com.orcaslicer.OrcaSlicer` | |
+| Blender | Flathub | `org.blender.Blender` | |
+| LibreOffice | Flathub | `org.libreoffice.LibreOffice` | |
+| Cursor | Official AppImage | `~/Applications/Cursor.AppImage` | |
+| Zed | Official installer | `zed.dev/install.sh` | |
+| Antigravity | Official AppImage | `~/Applications/Antigravity.AppImage` | Fails if Google does not publish an AppImage |
+| Maccy, Scroll Reverser, Caffeine | Skipped | — | macOS-only utilities |
+
+### Linux Post-Installation Notes
+
+- Log out and back in so `docker` group membership takes effect, then run `docker version` and `docker compose version`.
+- Reload the shell (or `source ~/.bashrc`) so `~/.local/bin` and `JAVA_HOME` are on PATH.
+- AppImages require FUSE and live in `~/Applications`.
+- Start a local cluster with `minikube start`; use `k9s` for a dashboard.
+- Test Ollama with `ollama run llama3`.
+
+---
+
+## macOS Installed Software Inventory
 
 ### CLI Tools & Runtimes (Homebrew Formulae)
 - **Node.js** (`node`) - Latest stable JavaScript runtime environment (includes `npm` and `npx`)
@@ -51,6 +114,7 @@ brew bundle --file=./macos/Brewfile
 - **Helm** (`helm`) - The package manager for Kubernetes
 - **Ripgrep** (`ripgrep`) - Ultra-fast recursive line-oriented code search tool (`rg`)
 - **CMake** (`cmake`) - Cross-platform build system generator (required for C/C++ projects like `biotech`)
+- **Python 3** (`python`) - General-purpose programming language (includes `pip`)
 - **Git** (`git`) & **Git LFS** (`git-lfs`) - Version control system and large file storage
 
 ### GUI Applications (Homebrew Casks)
@@ -60,6 +124,7 @@ brew bundle --file=./macos/Brewfile
 | **Docker Desktop** | `docker-desktop` | Containers & DevOps | GUI application, container daemon, and built-in Kubernetes engine |
 | **Raspberry Pi Imager** | `raspberry-pi-imager` | Embedded & Hardware | Official utility to flash and preconfigure OS images to SD cards |
 | **Cursor** | `cursor` | AI & Development | AI-first code editor built on VS Code |
+| **Zed** | `zed` | AI & Development | High-performance, multiplayer code editor |
 | **Visual Studio Code** | `visual-studio-code` | AI & Development | Extensible code editor from Microsoft |
 | **GitHub Desktop** | `github` | AI & Development | Official GUI client for GitHub repositories |
 | **Ollama** | `ollama-app` | AI & Development | Local LLM runner and CLI tool |

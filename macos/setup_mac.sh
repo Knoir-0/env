@@ -285,6 +285,7 @@ audit_brewfile_packages() {
                     docker-desktop) [[ -d "/Applications/Docker.app" ]] && is_installed=true ;;
                     raspberry-pi-imager) [[ -d "/Applications/Raspberry Pi Imager.app" ]] && is_installed=true ;;
                     cursor) [[ -d "/Applications/Cursor.app" ]] && is_installed=true ;;
+                    zed) [[ -d "/Applications/Zed.app" ]] && is_installed=true ;;
                     visual-studio-code) [[ -d "/Applications/Visual Studio Code.app" ]] && is_installed=true ;;
                     github) [[ -d "/Applications/GitHub Desktop.app" ]] && is_installed=true ;;
                     ollama-app) [[ -d "/Applications/Ollama.app" ]] && is_installed=true ;;
