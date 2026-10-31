@@ -1,41 +1,29 @@
 # ==============================================================================
 # Brewfile - Homebrew Package Manifest for macOS Development Workstation
 # ==============================================================================
+# macOS-specific formulae and casks. Cross-platform CLI tools shared with
+# Linux live in ../shared/Brewfile and are installed by setup_mac.sh as well.
+#
 # Usage:
 #   brew bundle --file=./Brewfile           # Install all formulae and casks
 #   brew bundle check --file=./Brewfile     # Verify if all packages are installed
 #   brew bundle --cleanup --file=./Brewfile # Uninstall packages not listed here
+#                                           # (WARNING: also removes shared/Brewfile
+#                                           #  packages unless run against both files)
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# CLI Formulae & Development Tools
+# CLI Formulae & Development Tools (macOS-only; Linux uses distro packages)
+# Node.js, Java, and Python are managed by mise (see ../shared/mise.toml)
 # ------------------------------------------------------------------------------
 # Distributed version control system
 brew "git"
 # Git extension for versioning large files
 brew "git-lfs"
-# Latest stable Node.js runtime environment (includes npm and npx)
-brew "node"
-# Latest stable OpenJDK (Java Development Kit)
-brew "openjdk"
-# Latest stable Python 3 runtime environment (includes pip)
-brew "python"
-# Cross-platform build system generator (for C/C++ projects like biotech)
-brew "cmake"
 # Docker command-line interface
 brew "docker"
 # Docker Compose multi-container application tool
 brew "docker-compose"
-# Kubernetes command-line interface (CLI)
-brew "kubectl"
-# Local Kubernetes cluster runner
-brew "minikube"
-# The Kubernetes package manager
-brew "helm"
-# Terminal-based UI dashboard for Kubernetes clusters
-brew "k9s"
-# Fast line-oriented recursive search tool (grep alternative)
-brew "ripgrep"
 
 # ------------------------------------------------------------------------------
 # GUI Applications & System Utilities (Casks)
@@ -44,6 +32,14 @@ brew "ripgrep"
 # --- Containers & DevOps ---
 # Docker Desktop GUI application, container daemon, and built-in Kubernetes
 cask "docker-desktop"
+# Open-source Kubernetes IDE (community fork of OpenLens)
+cask "freelens"
+
+# --- Databases & APIs ---
+# Modern SQL editor and database manager (Postgres, MySQL, SQLite, and more)
+cask "beekeeper-studio"
+# Lightweight REST, GraphQL, and gRPC API client
+cask "insomnia"
 
 # --- Embedded & Hardware Development ---
 # Official utility to flash and preconfigure Raspberry Pi OS images

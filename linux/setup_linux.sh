@@ -7,9 +7,11 @@
 #     1. Installing bootstrap packages (git, git-lfs, curl, flatpak, FUSE)
 #     2. Adding Flathub and installing GUI apps as user Flatpaks
 #     3. Installing Cursor and Antigravity as official AppImages
-#     4. Installing CLI tools from official upstream binaries
-#     5. Installing Docker Engine (official installer) and Ollama
-#     6. Configuring OpenJDK (JAVA_HOME) and ~/.local/bin on PATH
+#     4. Installing Homebrew on Linux and the cross-platform CLI tools
+#        defined in shared/Brewfile (same list the macOS script uses)
+#     5. Installing Docker Engine (official installer), Ollama, and Zed
+#     6. Configuring mise (Node.js, Java, Python from shared/mise.toml)
+#        and ~/.local/bin on PATH
 #
 # Usage:
 #   ./linux/setup_linux.sh             # Full installation
@@ -20,7 +22,8 @@
 # Requirements:
 #   - Linux (Debian/Ubuntu, Fedora/RHEL, or Arch family)
 #   - x86_64 or aarch64
-#   - Administrator (sudo) privileges for distro packages, Docker, and Ollama
+#   - Administrator (sudo) privileges for distro packages, Homebrew's
+#     /home/linuxbrew prefix, Docker, and Ollama
 #   - Active internet connection
 # ==============================================================================
 
@@ -29,113 +32,31 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MANIFEST="${SCRIPT_DIR}/packages.conf"
 
-# ------------------------------------------------------------------------------
-# Script Flags & Configuration
-# ------------------------------------------------------------------------------
-DRY_RUN=false
-CHECK_ONLY=false
-
-for arg in "$@"; do
-    case "$arg" in
-        --dry-run)
-            DRY_RUN=true
-            ;;
-        --check)
-            CHECK_ONLY=true
-            ;;
-        -h|--help)
-            echo "Usage: $0 [OPTIONS]"
-            echo ""
-            echo "Options:"
-            echo "  --check     Audit installed status of all packages defined in packages.conf"
-            echo "  --dry-run   Simulate the installation steps without modifying the system"
-            echo "  -h, --help  Show this help message"
-            exit 0
-            ;;
-        *)
-            echo "Unknown argument: $arg"
-            echo "Run '$0 --help' for usage."
-            exit 1
-            ;;
-    esac
-done
-
-# ------------------------------------------------------------------------------
-# Terminal Color & Formatting Helpers
-# ------------------------------------------------------------------------------
-if [ -t 1 ]; then
-    COLOR_RESET="\033[0m"
-    COLOR_BOLD="\033[1m"
-    COLOR_GREEN="\033[32m"
-    COLOR_BLUE="\033[34m"
-    COLOR_YELLOW="\033[33m"
-    COLOR_RED="\033[31m"
-    COLOR_CYAN="\033[36m"
-else
-    COLOR_RESET=""
-    COLOR_BOLD=""
-    COLOR_GREEN=""
-    COLOR_BLUE=""
-    COLOR_YELLOW=""
-    COLOR_RED=""
-    COLOR_CYAN=""
-fi
-
-log_step() {
-    echo -e "\n${COLOR_BOLD}${COLOR_BLUE}==>${COLOR_RESET} ${COLOR_BOLD}$1${COLOR_RESET}"
-}
-
-log_info() {
-    echo -e "  ${COLOR_CYAN}•${COLOR_RESET} $1"
-}
-
-log_success() {
-    echo -e "  ${COLOR_GREEN}✔${COLOR_RESET} $1"
-}
-
-log_warn() {
-    echo -e "  ${COLOR_YELLOW}⚠${COLOR_RESET} $1"
-}
-
-log_error() {
-    echo -e "  ${COLOR_RED}✘${COLOR_RESET} $1"
-}
+# Shared flags, logging, and Homebrew helpers (also provides SHARED_BREWFILE)
+# shellcheck source=../shared/lib.sh
+source "${SCRIPT_DIR}/../shared/lib.sh"
+parse_flags "packages.conf and shared/Brewfile" "$@"
 
 # ------------------------------------------------------------------------------
 # Shared Paths & Architecture
 # ------------------------------------------------------------------------------
 LOCAL_BIN="${HOME}/.local/bin"
-LOCAL_OPT="${HOME}/.local/opt"
 APPLICATIONS_DIR="${HOME}/Applications"
 DESKTOP_DIR="${HOME}/.local/share/applications"
-JAVA_HOME_DIR="${LOCAL_OPT}/openjdk"
+LINUXBREW_PREFIX="/home/linuxbrew/.linuxbrew"
 
 HOST_ARCH="$(uname -m)"
 case "$HOST_ARCH" in
     x86_64)
-        NODE_ARCH="x64"
-        JAVA_ARCH="x64"
-        K8S_ARCH="amd64"
-        CMAKE_ARCH="x86_64"
-        K9S_ARCH="amd64"
-        RG_ARCH="x86_64-unknown-linux-musl"
         CURSOR_PLATFORM="linux-x64"
         ANTIGRAVITY_UPDATE_ARCH="x64"
         ANTIGRAVITY_STORAGE_ARCH="x64"
-        MINIKUBE_ARCH="amd64"
         ;;
     aarch64|arm64)
         HOST_ARCH="aarch64"
-        NODE_ARCH="arm64"
-        JAVA_ARCH="aarch64"
-        K8S_ARCH="arm64"
-        CMAKE_ARCH="aarch64"
-        K9S_ARCH="arm64"
-        RG_ARCH="aarch64-unknown-linux-gnu"
         CURSOR_PLATFORM="linux-arm64"
         ANTIGRAVITY_UPDATE_ARCH="arm64"
         ANTIGRAVITY_STORAGE_ARCH="arm"
-        MINIKUBE_ARCH="arm64"
         ;;
     *)
         echo "Unsupported architecture: $HOST_ARCH (need x86_64 or aarch64)"
@@ -147,76 +68,6 @@ PKG_FAMILY=""
 PKG_INSTALL=()
 OS_ID=""
 OS_PRETTY=""
-
-# ------------------------------------------------------------------------------
-# Helpers
-# ------------------------------------------------------------------------------
-parse_entry() {
-    local entry="$1"
-    ENTRY_ID="${entry%%|*}"
-    local rest="${entry#*|}"
-    ENTRY_NAME="${rest%%|*}"
-    ENTRY_DESC="${rest#*|}"
-}
-
-json_string_field() {
-    local json="$1"
-    local field="$2"
-    local match
-    match="$(printf '%s' "$json" | grep -o "\"${field}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" | head -n 1 || true)"
-    if [[ -z "$match" ]]; then
-        return 1
-    fi
-    printf '%s' "$match" | sed 's/.*"\([^"]*\)"$/\1/'
-}
-
-github_release_json() {
-    local repo="$1"
-    curl -fsSL \
-        -H "Accept: application/vnd.github+json" \
-        -A "env-linux-setup" \
-        "https://api.github.com/repos/${repo}/releases/latest"
-}
-
-github_tag_name() {
-    json_string_field "$1" "tag_name"
-}
-
-download_file() {
-    local url="$1"
-    local dest="$2"
-    curl -fL --retry 3 --retry-delay 2 -o "$dest" "$url"
-}
-
-url_exists() {
-    local url="$1"
-    local code
-    code="$(curl -fsI -o /dev/null -w '%{http_code}' -L "$url" || true)"
-    [[ "$code" == "200" ]]
-}
-
-ensure_dir() {
-    mkdir -p "$1"
-}
-
-append_once() {
-    local file="$1"
-    local marker="$2"
-    local block="$3"
-    touch "$file"
-    if grep -qsF "$marker" "$file"; then
-        return 0
-    fi
-    printf '\n%s\n%s\n' "$marker" "$block" >> "$file"
-}
-
-command_on_path() {
-    command -v "$1" &>/dev/null
-}
-
-should_modify() {
-    [[ "$CHECK_ONLY" != "true" && "$DRY_RUN" != "true" ]]
-}
 
 # ------------------------------------------------------------------------------
 # Environment & OS Verification
@@ -261,10 +112,13 @@ verify_environment() {
         exit 1
     fi
 
-    if [[ ! -f "$MANIFEST" ]]; then
-        log_error "Package manifest not found at expected location: $MANIFEST"
-        exit 1
-    fi
+    local f
+    for f in "$MANIFEST" "$SHARED_BREWFILE" "$SHARED_MISE_CONFIG"; do
+        if [[ ! -f "$f" ]]; then
+            log_error "Required manifest not found at expected location: $f"
+            exit 1
+        fi
+    done
 
     # shellcheck disable=SC1090
     source "$MANIFEST"
@@ -272,7 +126,7 @@ verify_environment() {
     detect_pkg_family
     log_info "Operating System: $OS_PRETTY ($HOST_ARCH)"
     log_info "Package family: $PKG_FAMILY"
-    log_info "Using package manifest: $MANIFEST"
+    log_info "Using package manifests: $MANIFEST, $SHARED_BREWFILE"
 }
 
 # ------------------------------------------------------------------------------
@@ -281,7 +135,7 @@ verify_environment() {
 bootstrap_package_names() {
     case "$PKG_FAMILY" in
         debian)
-            echo "ca-certificates curl git git-lfs flatpak"
+            echo "ca-certificates curl git git-lfs flatpak build-essential procps file"
             if apt-cache show libfuse2t64 &>/dev/null; then
                 echo "libfuse2t64"
             else
@@ -289,17 +143,16 @@ bootstrap_package_names() {
             fi
             ;;
         fedora)
-            echo "ca-certificates curl git git-lfs flatpak fuse fuse-libs"
+            echo "ca-certificates curl git git-lfs flatpak fuse fuse-libs gcc gcc-c++ make procps-ng file"
             ;;
         arch)
-            echo "ca-certificates curl git git-lfs flatpak fuse2"
+            echo "ca-certificates curl git git-lfs flatpak fuse2 base-devel procps-ng file"
             ;;
     esac
 }
 
 ensure_local_path() {
     ensure_dir "$LOCAL_BIN"
-    ensure_dir "$LOCAL_OPT"
     ensure_dir "$APPLICATIONS_DIR"
     ensure_dir "$DESKTOP_DIR"
 
@@ -315,7 +168,7 @@ ensure_local_path() {
 }
 
 ensure_bootstrap() {
-    log_step "Checking bootstrap packages (git, git-lfs, curl, Flatpak, FUSE)..."
+    log_step "Checking bootstrap packages (git, git-lfs, curl, Flatpak, FUSE, Homebrew prerequisites)..."
 
     local missing=()
     local pkg
@@ -405,8 +258,11 @@ install_flatpaks() {
             log_warn "[Dry Run] Would install Flatpak: $ENTRY_ID ($ENTRY_NAME)"
         else
             log_info "Installing $ENTRY_NAME ($ENTRY_ID)..."
-            flatpak install --user -y flathub "$ENTRY_ID"
-            log_success "$ENTRY_NAME installed."
+            if flatpak install --user -y flathub "$ENTRY_ID"; then
+                log_success "$ENTRY_NAME installed."
+            else
+                log_warn "$ENTRY_NAME could not be installed (it may not be published for ${HOST_ARCH}). Continuing."
+            fi
         fi
     done
 }
@@ -535,203 +391,72 @@ audit_distro_packages() {
 }
 
 # ------------------------------------------------------------------------------
-# Official CLI binaries
+# Homebrew on Linux + shared Brewfile
 # ------------------------------------------------------------------------------
-install_node() {
-    if [[ -x "${LOCAL_OPT}/node/bin/node" ]] && command_on_path node; then
-        log_success "node - already installed ($(node --version 2>/dev/null || true))"
-        return 0
-    fi
-    local index version url tmp
-    index="$(curl -fsSL https://nodejs.org/dist/index.json)"
-    version="$(printf '%s' "$index" | grep -o '"version":"v[^"]*"' | head -n 1 | cut -d'"' -f4)"
-    if [[ -z "$version" ]]; then
-        log_error "Could not determine latest Node.js version."
-        exit 1
-    fi
-    url="https://nodejs.org/dist/${version}/node-${version}-linux-${NODE_ARCH}.tar.xz"
-    tmp="$(mktemp -d)"
-    download_file "$url" "${tmp}/node.tar.xz"
-    rm -rf "${LOCAL_OPT}/node"
-    ensure_dir "${LOCAL_OPT}/node"
-    tar -xJf "${tmp}/node.tar.xz" -C "${LOCAL_OPT}/node" --strip-components=1
-    ln -sfn "${LOCAL_OPT}/node/bin/node" "${LOCAL_BIN}/node"
-    ln -sfn "${LOCAL_OPT}/node/bin/npm" "${LOCAL_BIN}/npm"
-    ln -sfn "${LOCAL_OPT}/node/bin/npx" "${LOCAL_BIN}/npx"
-    rm -rf "$tmp"
-    log_success "Node.js ${version} installed."
-}
-
-install_openjdk() {
-    if [[ -x "${JAVA_HOME_DIR}/bin/java" ]]; then
-        log_success "openjdk - already installed ($("${JAVA_HOME_DIR}/bin/java" --version 2>&1 | head -n 1))"
-        return 0
-    fi
-    local releases feature url tmp
-    releases="$(curl -fsSL https://api.adoptium.net/v3/info/available_releases)"
-    feature="$(printf '%s' "$releases" | grep -o '"most_recent_feature_release":[0-9]*' | head -n 1 | cut -d: -f2)"
-    if [[ -z "$feature" ]]; then
-        log_error "Could not determine latest Temurin feature release."
-        exit 1
-    fi
-    url="https://api.adoptium.net/v3/binary/latest/${feature}/ga/linux/${JAVA_ARCH}/jdk/hotspot/normal/eclipse?project=jdk"
-    tmp="$(mktemp -d)"
-    download_file "$url" "${tmp}/jdk.tar.gz"
-    rm -rf "$JAVA_HOME_DIR"
-    ensure_dir "$JAVA_HOME_DIR"
-    tar -xzf "${tmp}/jdk.tar.gz" -C "$JAVA_HOME_DIR" --strip-components=1
-    ln -sfn "${JAVA_HOME_DIR}/bin/java" "${LOCAL_BIN}/java"
-    ln -sfn "${JAVA_HOME_DIR}/bin/javac" "${LOCAL_BIN}/javac"
-    rm -rf "$tmp"
-    log_success "OpenJDK (Temurin ${feature}) installed."
-}
-
-install_cmake() {
-    if command_on_path cmake && [[ -x "${LOCAL_OPT}/cmake/bin/cmake" || "$(command -v cmake)" == "${LOCAL_BIN}/cmake" ]]; then
-        log_success "cmake - already installed ($(cmake --version 2>/dev/null | head -n 1))"
-        return 0
-    fi
-    local json tag version url tmp
-    json="$(github_release_json Kitware/CMake)"
-    tag="$(github_tag_name "$json")"
-    version="${tag#v}"
-    url="https://github.com/Kitware/CMake/releases/download/${tag}/cmake-${version}-linux-${CMAKE_ARCH}.tar.gz"
-    tmp="$(mktemp -d)"
-    download_file "$url" "${tmp}/cmake.tar.gz"
-    rm -rf "${LOCAL_OPT}/cmake"
-    ensure_dir "${LOCAL_OPT}/cmake"
-    tar -xzf "${tmp}/cmake.tar.gz" -C "${LOCAL_OPT}/cmake" --strip-components=1
-    ln -sfn "${LOCAL_OPT}/cmake/bin/cmake" "${LOCAL_BIN}/cmake"
-    ln -sfn "${LOCAL_OPT}/cmake/bin/ccmake" "${LOCAL_BIN}/ccmake"
-    ln -sfn "${LOCAL_OPT}/cmake/bin/ctest" "${LOCAL_BIN}/ctest"
-    ln -sfn "${LOCAL_OPT}/cmake/bin/cpack" "${LOCAL_BIN}/cpack"
-    rm -rf "$tmp"
-    log_success "CMake ${version} installed."
-}
-
-install_kubectl() {
-    if command_on_path kubectl && [[ "$(command -v kubectl)" == "${LOCAL_BIN}/kubectl" || -x "${LOCAL_BIN}/kubectl" ]]; then
-        log_success "kubectl - already installed ($(kubectl version --client --short 2>/dev/null || kubectl version --client 2>/dev/null | head -n 1))"
-        return 0
-    fi
-    local version
-    version="$(curl -fsSL https://dl.k8s.io/release/stable.txt)"
-    download_file "https://dl.k8s.io/release/${version}/bin/linux/${K8S_ARCH}/kubectl" "${LOCAL_BIN}/kubectl"
-    chmod +x "${LOCAL_BIN}/kubectl"
-    log_success "kubectl ${version} installed."
-}
-
-install_minikube() {
-    if command_on_path minikube && [[ -x "${LOCAL_BIN}/minikube" ]]; then
-        log_success "minikube - already installed ($(minikube version 2>/dev/null | head -n 1))"
-        return 0
-    fi
-    download_file "https://github.com/kubernetes/minikube/releases/latest/download/minikube-linux-${MINIKUBE_ARCH}" "${LOCAL_BIN}/minikube"
-    chmod +x "${LOCAL_BIN}/minikube"
-    log_success "minikube installed."
-}
-
-install_helm() {
-    if command_on_path helm && [[ -x "${LOCAL_BIN}/helm" ]]; then
-        log_success "helm - already installed ($(helm version --short 2>/dev/null || true))"
-        return 0
-    fi
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | HELM_INSTALL_DIR="$LOCAL_BIN" USE_SUDO=false bash
-    log_success "Helm installed."
-}
-
-install_k9s() {
-    if command_on_path k9s && [[ -x "${LOCAL_BIN}/k9s" ]]; then
-        log_success "k9s - already installed ($(k9s version 2>/dev/null | head -n 1 || true))"
-        return 0
-    fi
-    local json tag version url tmp
-    json="$(github_release_json derailed/k9s)"
-    tag="$(github_tag_name "$json")"
-    version="${tag#v}"
-    url="https://github.com/derailed/k9s/releases/download/${tag}/k9s_Linux_${K9S_ARCH}.tar.gz"
-    if [[ "$K9S_ARCH" == "amd64" ]] && ! url_exists "$url"; then
-        url="https://github.com/derailed/k9s/releases/download/${tag}/k9s_Linux_x86_64.tar.gz"
-    fi
-    tmp="$(mktemp -d)"
-    download_file "$url" "${tmp}/k9s.tar.gz"
-    tar -xzf "${tmp}/k9s.tar.gz" -C "$tmp"
-    install -m 0755 "${tmp}/k9s" "${LOCAL_BIN}/k9s"
-    rm -rf "$tmp"
-    log_success "k9s ${version} installed."
-}
-
-install_ripgrep() {
-    if command_on_path rg && [[ -x "${LOCAL_BIN}/rg" ]]; then
-        log_success "ripgrep - already installed ($(rg --version 2>/dev/null | head -n 1))"
-        return 0
-    fi
-    local json tag version url tmp
-    json="$(github_release_json BurntSushi/ripgrep)"
-    tag="$(github_tag_name "$json")"
-    version="${tag#v}"
-    url="https://github.com/BurntSushi/ripgrep/releases/download/${tag}/ripgrep-${version}-${RG_ARCH}.tar.gz"
-    tmp="$(mktemp -d)"
-    download_file "$url" "${tmp}/rg.tar.gz"
-    tar -xzf "${tmp}/rg.tar.gz" -C "$tmp"
-    local rg_bin
-    rg_bin="$(find "$tmp" -type f -name rg | head -n 1)"
-    if [[ -z "$rg_bin" ]]; then
-        log_error "ripgrep archive did not contain an rg binary."
-        exit 1
-    fi
-    install -m 0755 "$rg_bin" "${LOCAL_BIN}/rg"
-    rm -rf "$tmp"
-    log_success "ripgrep ${version} installed."
-}
-
-cli_is_installed() {
-    local id="$1"
-    case "$id" in
-        node) [[ -x "${LOCAL_OPT}/node/bin/node" ]] && command_on_path node ;;
-        openjdk) [[ -x "${JAVA_HOME_DIR}/bin/java" ]] ;;
-        cmake) command_on_path cmake ;;
-        kubectl) command_on_path kubectl ;;
-        minikube) command_on_path minikube ;;
-        helm) command_on_path helm ;;
-        k9s) command_on_path k9s ;;
-        ripgrep) command_on_path rg ;;
-        *) return 1 ;;
-    esac
-}
-
-install_cli_binaries() {
-    log_step "Installing official CLI binaries..."
-    local entry
-    for entry in "${CLI_BINARIES[@]}"; do
-        parse_entry "$entry"
-        if cli_is_installed "$ENTRY_ID"; then
-            log_success "$ENTRY_ID - $ENTRY_DESC (Installed)"
-            continue
+# Warn (don't fail) when Homebrew would fall outside its Tier 1 support,
+# where some formulae may need to build from source.
+check_brew_tier() {
+    local glibc
+    glibc="$(ldd --version 2>/dev/null | head -n 1 | grep -oE '[0-9]+\.[0-9]+$' || true)"
+    if [[ "$HOST_ARCH" == "aarch64" && -n "$glibc" ]]; then
+        if [[ "$(printf '%s\n' "2.39" "$glibc" | sort -V | head -n 1)" != "2.39" ]]; then
+            log_warn "glibc ${glibc} < 2.39: Homebrew on ARM64 Linux is not Tier 1 here; some formulae may build from source."
         fi
-        if [[ "$CHECK_ONLY" == "true" ]]; then
-            log_warn "$ENTRY_ID - $ENTRY_DESC (Not installed)"
-            continue
-        fi
-        if [[ "$DRY_RUN" == "true" ]]; then
-            log_warn "[Dry Run] Would install official binary: $ENTRY_ID ($ENTRY_DESC)"
-            continue
-        fi
-        case "$ENTRY_ID" in
-            node) install_node ;;
-            openjdk) install_openjdk ;;
-            cmake) install_cmake ;;
-            kubectl) install_kubectl ;;
-            minikube) install_minikube ;;
-            helm) install_helm ;;
-            k9s) install_k9s ;;
-            ripgrep) install_ripgrep ;;
-            *)
-                log_error "Unknown CLI binary: $ENTRY_ID"
-                exit 1
-                ;;
-        esac
-    done
+    fi
+}
+
+ensure_homebrew() {
+    log_step "Checking Homebrew on Linux..."
+
+    local brew_bin=""
+    if command_on_path brew; then
+        brew_bin="$(command -v brew)"
+    elif [[ -x "${LINUXBREW_PREFIX}/bin/brew" ]]; then
+        brew_bin="${LINUXBREW_PREFIX}/bin/brew"
+    elif [[ -x "${HOME}/.linuxbrew/bin/brew" ]]; then
+        brew_bin="${HOME}/.linuxbrew/bin/brew"
+    fi
+
+    if [[ -n "$brew_bin" ]]; then
+        eval "$("$brew_bin" shellenv)"
+        log_success "Homebrew available: $brew_bin"
+    elif [[ "$CHECK_ONLY" == "true" ]]; then
+        log_warn "Homebrew: NOT INSTALLED"
+        return 0
+    elif [[ "$DRY_RUN" == "true" ]]; then
+        log_warn "[Dry Run] Would run Homebrew's official install script (prefix ${LINUXBREW_PREFIX})"
+        return 0
+    else
+        check_brew_tier
+        log_info "Installing Homebrew via official script (sudo needed to create ${LINUXBREW_PREFIX})..."
+        NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        brew_bin="${LINUXBREW_PREFIX}/bin/brew"
+        eval "$("$brew_bin" shellenv)"
+        log_success "Homebrew installed."
+    fi
+
+    local rc_files=("$HOME/.bashrc")
+    [[ -f "$HOME/.zshrc" ]] && rc_files+=("$HOME/.zshrc")
+    persist_brew_shellenv "$brew_bin" "${rc_files[@]}"
+
+    if should_modify; then
+        log_info "Updating Homebrew metadata..."
+        brew update --quiet || true
+    fi
+}
+
+install_shared_brewfile() {
+    if ! command_on_path brew; then
+        log_step "Shared CLI tools (shared/Brewfile)..."
+        log_warn "Homebrew is not available; skipping shared/Brewfile."
+        return 0
+    fi
+    if should_modify; then
+        run_brew_bundle "$SHARED_BREWFILE"
+    else
+        log_step "Auditing shared CLI tools (shared/Brewfile)..."
+        audit_brew_formulae "$SHARED_BREWFILE"
+    fi
 }
 
 # ------------------------------------------------------------------------------
@@ -783,7 +508,7 @@ install_docker_engine() {
 install_ollama() {
     log_step "Installing Ollama..."
     if command_on_path ollama; then
-        log_success "Ollama - already installed ($(ollama --version 2>/dev/null || true))"
+        log_success "Ollama - already installed ($(ollama --version 2>/dev/null | tail -n 1 || true))"
         return 0
     fi
     if [[ "$CHECK_ONLY" == "true" ]]; then
@@ -812,45 +537,21 @@ install_zed() {
         log_warn "[Dry Run] Would run Zed's official install script"
         return 0
     fi
-    curl -fC sSL https://zed.dev/install.sh | sh
+    curl -fsSL https://zed.dev/install.sh | sh
     log_success "Zed installed."
 }
 
 # ------------------------------------------------------------------------------
-# Java environment
+# mise (Node.js, Java, Python versions from shared/mise.toml)
 # ------------------------------------------------------------------------------
-configure_java() {
-    log_step "Configuring Java Environment..."
-
-    if [[ ! -x "${JAVA_HOME_DIR}/bin/java" ]]; then
-        if [[ "$CHECK_ONLY" == "true" ]]; then
-            log_warn "Java (OpenJDK) is not installed."
-        elif [[ "$DRY_RUN" == "true" ]]; then
-            log_info "[Dry Run] Java environment will be configured after Temurin installation."
-        fi
-        return 0
+configure_mise() {
+    setup_mise
+    add_mise_activation bash "$HOME/.bashrc"
+    if [[ -f "$HOME/.zshrc" ]]; then
+        add_mise_activation zsh "$HOME/.zshrc"
     fi
-
-    local marker="# env-setup: OpenJDK"
-    local block
-    block="$(cat << EOF
-export JAVA_HOME="${JAVA_HOME_DIR}"
-export PATH="\$JAVA_HOME/bin:\$PATH"
-EOF
-)"
-
-    if should_modify; then
-        append_once "$HOME/.bashrc" "$marker" "$block"
-        if [[ -f "$HOME/.zshrc" ]]; then
-            append_once "$HOME/.zshrc" "$marker" "$block"
-        fi
-        export JAVA_HOME="$JAVA_HOME_DIR"
-        export PATH="${JAVA_HOME}/bin:${PATH}"
-        log_success "JAVA_HOME=${JAVA_HOME_DIR}"
-        log_success "Java active: $("${JAVA_HOME_DIR}/bin/java" --version 2>&1 | head -n 1)"
-    else
-        log_info "Java present at ${JAVA_HOME_DIR} (shell rc will be updated during install)"
-    fi
+    # ~/.profile is read by login shells and most desktop sessions (GUI apps/IDEs)
+    add_mise_activation bash "$HOME/.profile" --shims
 }
 
 # ------------------------------------------------------------------------------
@@ -882,10 +583,21 @@ show_post_install_notes() {
     - Desktop entries are in ${DESKTOP_DIR}
     - FUSE (libfuse2 / fuse2) is required to run AppImages
 
+  Homebrew:
+    - Installed at ${LINUXBREW_PREFIX}; shared CLI tools come from shared/Brewfile
+    - Reload the shell (or source ~/.bashrc) to pick up brew, mise, and PATH
+    - Keep tools current with: brew update && brew upgrade
+
+  Flatpak apps:
+    - Beekeeper Studio is sandboxed; to open SQLite files outside your home dir:
+      flatpak override --user --filesystem=host io.beekeeperstudio.Studio
+
   CLI Tools:
-    - Binaries are on PATH via ${LOCAL_BIN} (reload the shell or source ~/.bashrc)
-    - Node.js: node -v && npm -v
-    - Java: java --version && javac --version
+    - Runtimes (mise): run 'mise ls' to see active versions
+      * Node.js: node -v   Java: java --version   Python: python --version
+      * The distro python3 stays in place for the OS
+      * Defaults live in shared/mise.toml; pin per project with: mise use node@22
+      * Update "latest" runtimes with: mise upgrade
     - Kubernetes: kubectl version --client
       * Start a local cluster: minikube start
       * Dashboard: k9s
@@ -902,26 +614,19 @@ EOF
 # Main
 # ------------------------------------------------------------------------------
 main() {
-    echo -e "${COLOR_BOLD}${COLOR_CYAN}======================================================"
-    echo -e "       Linux Development Environment Setup"
-    echo -e "======================================================${COLOR_RESET}"
-
-    if [[ "$CHECK_ONLY" == "true" ]]; then
-        echo -e "${COLOR_YELLOW}Running in CHECK-ONLY mode (no changes will be made)...${COLOR_RESET}"
-    elif [[ "$DRY_RUN" == "true" ]]; then
-        echo -e "${COLOR_YELLOW}Running in DRY-RUN mode (simulating actions)...${COLOR_RESET}"
-    fi
+    print_banner "Linux Development Environment Setup"
 
     verify_environment
     ensure_bootstrap
     audit_distro_packages
     install_flatpaks
     install_appimages
-    install_cli_binaries
+    ensure_homebrew
+    install_shared_brewfile
     install_docker_engine
     install_ollama
     install_zed
-    configure_java
+    configure_mise
     show_skipped
 
     if [[ "$CHECK_ONLY" == "true" ]]; then

@@ -1,0 +1,37 @@
+# ==============================================================================
+# Shared Brewfile - Cross-platform CLI tools (macOS + Linux, x86_64 + arm64)
+# ==============================================================================
+# Installed by BOTH macos/setup_mac.sh and linux/setup_linux.sh.
+# Only put formulae here that build/bottle on every target platform.
+# macOS-only formulae and all casks belong in macos/Brewfile.
+#
+# Usage:
+#   brew bundle --file=./shared/Brewfile
+#   brew bundle check --file=./shared/Brewfile
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Language Runtimes & Build Tools
+# ------------------------------------------------------------------------------
+# Runtime version manager for Node.js, Java, and Python (see shared/mise.toml)
+brew "mise"
+# Cross-platform build system generator (for C/C++ projects like biotech)
+brew "cmake"
+
+# ------------------------------------------------------------------------------
+# Kubernetes
+# ------------------------------------------------------------------------------
+# Kubernetes command-line interface (CLI)
+brew "kubectl"
+# Local Kubernetes cluster runner
+brew "minikube"
+# The Kubernetes package manager
+brew "helm"
+# Terminal-based UI dashboard for Kubernetes clusters
+brew "k9s"
+
+# ------------------------------------------------------------------------------
+# Shell & Productivity
+# ------------------------------------------------------------------------------
+# Fast line-oriented recursive search tool (grep alternative)
+brew "ripgrep"

@@ -7,7 +7,7 @@
 #     1. Ensuring Apple Xcode Command Line Tools are installed
 #     2. Installing Homebrew (if missing) and configuring shell environment
 #     3. Directly executing 'brew bundle' against the companion Brewfile
-#     4. Configuring OpenJDK Java symlinks and environment variables
+#     4. Configuring mise (Node.js, Java, Python versions from shared/mise.toml)
 #     5. Providing post-installation guidance and macOS permission reminders
 #
 # Usage:
@@ -27,77 +27,10 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREWFILE="${SCRIPT_DIR}/Brewfile"
 
-# ------------------------------------------------------------------------------
-# Script Flags & Configuration
-# ------------------------------------------------------------------------------
-DRY_RUN=false
-CHECK_ONLY=false
-
-for arg in "$@"; do
-    case "$arg" in
-        --dry-run)
-            DRY_RUN=true
-            ;;
-        --check)
-            CHECK_ONLY=true
-            ;;
-        -h|--help)
-            echo "Usage: $0 [OPTIONS]"
-            echo ""
-            echo "Options:"
-            echo "  --check     Audit installed status of all packages defined in Brewfile"
-            echo "  --dry-run   Simulate the installation steps without modifying system"
-            echo "  -h, --help  Show this help message"
-            exit 0
-            ;;
-        *)
-            echo "Unknown argument: $arg"
-            echo "Run '$0 --help' for usage."
-            exit 1
-            ;;
-    esac
-done
-
-# ------------------------------------------------------------------------------
-# Terminal Color & Formatting Helpers
-# ------------------------------------------------------------------------------
-if [ -t 1 ]; then
-    COLOR_RESET="\033[0m"
-    COLOR_BOLD="\033[1m"
-    COLOR_GREEN="\033[32m"
-    COLOR_BLUE="\033[34m"
-    COLOR_YELLOW="\033[33m"
-    COLOR_RED="\033[31m"
-    COLOR_CYAN="\033[36m"
-else
-    COLOR_RESET=""
-    COLOR_BOLD=""
-    COLOR_GREEN=""
-    COLOR_BLUE=""
-    COLOR_YELLOW=""
-    COLOR_RED=""
-    COLOR_CYAN=""
-fi
-
-log_step() {
-    echo -e "\n${COLOR_BOLD}${COLOR_BLUE}==>${COLOR_RESET} ${COLOR_BOLD}$1${COLOR_RESET}"
-}
-
-log_info() {
-    echo -e "  ${COLOR_CYAN}•${COLOR_RESET} $1"
-}
-
-log_success() {
-    echo -e "  ${COLOR_GREEN}✔${COLOR_RESET} $1"
-}
-
-log_warn() {
-    echo -e "  ${COLOR_YELLOW}⚠${COLOR_RESET} $1"
-}
-
-log_error() {
-    echo -e "  ${COLOR_RED}✘${COLOR_RESET} $1"
-}
+# Shared flags, logging, and Homebrew helpers (also provides SHARED_BREWFILE)
+# shellcheck source=../shared/lib.sh
+source "${SCRIPT_DIR}/../shared/lib.sh"
+parse_flags "Brewfile and shared/Brewfile" "$@"
 
 # ------------------------------------------------------------------------------
 # Environment & OS Verification
@@ -110,10 +43,13 @@ verify_environment() {
         exit 1
     fi
 
-    if [[ ! -f "$BREWFILE" ]]; then
-        log_error "Brewfile not found at expected location: $BREWFILE"
-        exit 1
-    fi
+    local f
+    for f in "$BREWFILE" "$SHARED_BREWFILE" "$SHARED_MISE_CONFIG"; do
+        if [[ ! -f "$f" ]]; then
+            log_error "Required manifest not found at expected location: $f"
+            exit 1
+        fi
+    done
 
     local arch
     arch="$(uname -m)"
@@ -127,7 +63,7 @@ verify_environment() {
         HOMEBREW_PREFIX="/usr/local"
     fi
     log_info "Homebrew Prefix target: $HOMEBREW_PREFIX"
-    log_info "Using package manifest: $BREWFILE"
+    log_info "Using package manifests: $SHARED_BREWFILE, $BREWFILE"
 }
 
 # ------------------------------------------------------------------------------
@@ -186,19 +122,7 @@ ensure_homebrew() {
     # Ensure Homebrew is configured in ~/.zprofile / ~/.zshrc
     local shell_rc="$HOME/.zprofile"
     [[ ! -f "$shell_rc" && -f "$HOME/.zshrc" ]] && shell_rc="$HOME/.zshrc"
-
-    local shellenv_line="eval \"\$($HOMEBREW_PREFIX/bin/brew shellenv)\""
-    if ! grep -qs "brew shellenv" "$shell_rc" 2>/dev/null; then
-        if [[ "$DRY_RUN" == "true" || "$CHECK_ONLY" == "true" ]]; then
-            log_info "Homebrew shellenv missing from $shell_rc (will be appended during install)"
-        else
-            log_info "Configuring Homebrew shellenv in $shell_rc..."
-            echo "" >> "$shell_rc"
-            echo "# Load Homebrew environment" >> "$shell_rc"
-            echo "$shellenv_line" >> "$shell_rc"
-            log_success "Added Homebrew to $shell_rc"
-        fi
-    fi
+    persist_brew_shellenv "$HOMEBREW_PREFIX/bin/brew" "$shell_rc"
 
     # Update Homebrew indices
     if [[ "$CHECK_ONLY" != "true" && "$DRY_RUN" != "true" ]]; then
@@ -213,41 +137,13 @@ ensure_homebrew() {
 audit_brewfile_packages() {
     log_step "Auditing packages defined in Brewfile..."
 
-    local installed_formulae
-    installed_formulae="$(brew list --formula 2>/dev/null || true)"
+    echo -e "\n  ${COLOR_BOLD}CLI Tools & Formulae:${COLOR_RESET}"
+    audit_brew_formulae "$SHARED_BREWFILE" "$BREWFILE"
+
     local installed_casks
     installed_casks="$(brew list --cask 2>/dev/null || true)"
-
     local current_comment=""
     local current_category="General"
-
-    echo -e "\n  ${COLOR_BOLD}CLI Tools & Formulae:${COLOR_RESET}"
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        line="$(echo "$line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-        [[ -z "$line" ]] && continue
-
-        if [[ "$line" =~ ^#[[:space:]]*---[[:space:]]*(.*)[[:space:]]*--- ]]; then
-            continue
-        elif [[ "$line" =~ ^#[[:space:]]*(.*) ]]; then
-            current_comment="${BASH_REMATCH[1]}"
-            continue
-        fi
-
-        if [[ "$line" =~ ^brew[[:space:]]+\"([^\"]+)\" ]]; then
-            local formula="${BASH_REMATCH[1]}"
-            local desc="${current_comment:-$formula}"
-            if echo "$installed_formulae" | grep -Fxq "$formula"; then
-                log_success "$formula - $desc (Installed)"
-            else
-                if [[ "$CHECK_ONLY" == "true" ]]; then
-                    log_warn "$formula - $desc (Not installed)"
-                elif [[ "$DRY_RUN" == "true" ]]; then
-                    log_warn "[Dry Run] Would install formula: $formula ($desc)"
-                fi
-            fi
-            current_comment=""
-        fi
-    done < "$BREWFILE"
 
     echo -e "\n  ${COLOR_BOLD}GUI Applications & Casks:${COLOR_RESET}"
     current_comment=""
@@ -298,6 +194,9 @@ audit_brewfile_packages() {
                     maccy) [[ -d "/Applications/Maccy.app" ]] && is_installed=true ;;
                     scroll-reverser) [[ -d "/Applications/Scroll Reverser.app" ]] && is_installed=true ;;
                     caffeine) [[ -d "/Applications/Caffeine.app" ]] && is_installed=true ;;
+                    freelens) [[ -d "/Applications/Freelens.app" ]] && is_installed=true ;;
+                    beekeeper-studio) [[ -d "/Applications/Beekeeper Studio.app" ]] && is_installed=true ;;
+                    insomnia) [[ -d "/Applications/Insomnia.app" ]] && is_installed=true ;;
                     *) [[ -d "/Applications/${cask}.app" || -d "$HOME/Applications/${cask}.app" ]] && is_installed=true ;;
                 esac
             fi
@@ -317,81 +216,12 @@ audit_brewfile_packages() {
 }
 
 # ------------------------------------------------------------------------------
-# Execute Homebrew Bundle
+# Configure mise (Node.js, Java, Python versions from shared/mise.toml)
 # ------------------------------------------------------------------------------
-run_brew_bundle() {
-    log_step "Executing 'brew bundle' using $BREWFILE..."
-
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "[Dry Run] Skipping bundle execution."
-        return 0
-    fi
-
-    brew bundle --file="$BREWFILE"
-    log_success "All packages from Brewfile installed/verified."
-}
-
-# ------------------------------------------------------------------------------
-# Configure Java (OpenJDK) Environment & Symlinks
-# ------------------------------------------------------------------------------
-configure_java() {
-    log_step "Configuring Java Environment..."
-
-    local openjdk_path="$HOMEBREW_PREFIX/opt/openjdk"
-
-    if brew list --formula 2>/dev/null | grep -Fxq "openjdk" || [[ -d "$openjdk_path" ]]; then
-        local jvm_dir="/Library/Java/JavaVirtualMachines"
-
-        # 1. macOS system wrapper symlink so /usr/libexec/java_home recognizes OpenJDK
-        if [[ -d "$openjdk_path/libexec/openjdk.jdk" ]]; then
-            if [[ -L "$jvm_dir/openjdk.jdk" ]] && [[ "$(readlink "$jvm_dir/openjdk.jdk")" == "$openjdk_path/libexec/openjdk.jdk" ]]; then
-                log_success "Java system symlink active ($jvm_dir/openjdk.jdk)"
-            else
-                if [[ "$CHECK_ONLY" == "true" ]]; then
-                    log_warn "Java system symlink missing in $jvm_dir/openjdk.jdk"
-                elif [[ "$DRY_RUN" == "true" ]]; then
-                    log_warn "[Dry Run] Would create symlink: sudo ln -sfn \"$openjdk_path/libexec/openjdk.jdk\" \"$jvm_dir/openjdk.jdk\""
-                else
-                    log_info "Creating JDK symlink for macOS system wrappers (requires sudo)..."
-                    sudo ln -sfn "$openjdk_path/libexec/openjdk.jdk" "$jvm_dir/openjdk.jdk" 2>/dev/null || {
-                        log_warn "Could not create $jvm_dir/openjdk.jdk (requires sudo). System wrappers might need manual linking."
-                    }
-                fi
-            fi
-        fi
-
-        # 2. Add OpenJDK to shell PATH and set JAVA_HOME in ~/.zprofile / ~/.zshrc
-        local shell_rc="$HOME/.zprofile"
-        [[ ! -f "$shell_rc" && -f "$HOME/.zshrc" ]] && shell_rc="$HOME/.zshrc"
-
-        if ! grep -qs "openjdk/bin" "$shell_rc" 2>/dev/null; then
-            if [[ "$CHECK_ONLY" == "true" || "$DRY_RUN" == "true" ]]; then
-                log_info "Java PATH & JAVA_HOME missing from $shell_rc"
-            else
-                log_info "Adding Java environment variables to $shell_rc..."
-                {
-                    echo ""
-                    echo "# OpenJDK configuration"
-                    echo "export PATH=\"$openjdk_path/bin:\$PATH\""
-                    echo "export JAVA_HOME=\"\$(/usr/libexec/java_home 2>/dev/null || echo '$openjdk_path')\""
-                } >> "$shell_rc"
-                log_success "Java environment variables added to $shell_rc"
-            fi
-        fi
-
-        # Export for current session
-        export PATH="$openjdk_path/bin:$PATH"
-        export JAVA_HOME="$(/usr/libexec/java_home 2>/dev/null || echo "$openjdk_path")"
-        if command -v java &>/dev/null; then
-            log_success "Java active: $(java --version 2>&1 | head -n 1)"
-        fi
-    else
-        if [[ "$CHECK_ONLY" == "true" ]]; then
-            log_warn "Java (OpenJDK) is not installed."
-        elif [[ "$DRY_RUN" == "true" ]]; then
-            log_info "[Dry Run] Java environment will be configured after openjdk formula installation."
-        fi
-    fi
+configure_mise() {
+    setup_mise
+    add_mise_activation zsh "$HOME/.zshrc"
+    add_mise_activation zsh "$HOME/.zprofile" --shims
 }
 
 # ------------------------------------------------------------------------------
@@ -410,8 +240,10 @@ show_post_install_notes() {
      - Enable: Scroll Reverser
 
   CLI Tools Quickstart:
-  - Node.js: Run 'node -v' and 'npm -v' to verify latest stable Node environment.
-  - Java: Run 'java --version' and 'javac --version' to verify latest stable OpenJDK.
+  - Runtimes (mise): open a new terminal, then run 'mise ls' to see active versions.
+    * Node.js: 'node -v' / 'npm -v'   Java: 'java --version'   Python: 'python --version'
+    * Defaults live in shared/mise.toml; pin per project with 'mise use node@22'
+    * Update "latest" runtimes with 'mise upgrade'
   - Docker: Launch Docker.app to initialize the container daemon.
   - Kubernetes: Run 'kubectl version --client' to verify CLI.
     * Enable Kubernetes in Docker Desktop: Settings -> Kubernetes -> Enable Kubernetes
@@ -426,15 +258,7 @@ EOF
 # Main Execution Flow
 # ------------------------------------------------------------------------------
 main() {
-    echo -e "${COLOR_BOLD}${COLOR_CYAN}======================================================"
-    echo -e "       macOS Development Environment Setup"
-    echo -e "======================================================${COLOR_RESET}"
-
-    if [[ "$CHECK_ONLY" == "true" ]]; then
-        echo -e "${COLOR_YELLOW}Running in CHECK-ONLY mode (no changes will be made)...${COLOR_RESET}"
-    elif [[ "$DRY_RUN" == "true" ]]; then
-        echo -e "${COLOR_YELLOW}Running in DRY-RUN mode (simulating actions)...${COLOR_RESET}"
-    fi
+    print_banner "macOS Development Environment Setup"
 
     verify_environment
     ensure_xcode_tools
@@ -442,17 +266,17 @@ main() {
 
     if [[ "$CHECK_ONLY" == "true" ]]; then
         audit_brewfile_packages
-        configure_java
+        configure_mise
         echo ""
         log_info "Audit check complete."
     elif [[ "$DRY_RUN" == "true" ]]; then
         audit_brewfile_packages
-        configure_java
+        configure_mise
         echo ""
         log_info "Dry-run simulation complete."
     else
-        run_brew_bundle
-        configure_java
+        run_brew_bundle "$SHARED_BREWFILE" "$BREWFILE"
+        configure_mise
         show_post_install_notes
         echo ""
         log_success "All macOS applications and development tools configured successfully!"

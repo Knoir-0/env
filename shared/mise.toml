@@ -1,0 +1,27 @@
+# ==============================================================================
+# Global mise config - default language runtimes (macOS + Linux)
+# ==============================================================================
+# Linked to ~/.config/mise/config.toml by the setup scripts, so editing this
+# file in the repo changes the defaults on every machine.
+#
+# These are the fallback versions used outside any project. A project can pin
+# its own versions with a mise.toml (or .nvmrc / .python-version / etc.).
+#
+# Version strings:
+#   "latest"  newest stable release (Node: the "Current" line)
+#   "lts"     Node only: newest long-term-support line
+#   "22"      newest 22.x.y; "22.11.0" exact
+#
+# Useful commands:
+#   mise ls               show active versions and where they come from
+#   mise upgrade          update "latest" tools to their newest release
+#   mise use node@22      pin a version in the current project's mise.toml
+# ==============================================================================
+
+[tools]
+# JavaScript runtime (includes npm and npx)
+node = "latest"
+# JDK; mise's default vendor is Eclipse Temurin. Sets JAVA_HOME when active.
+java = "latest"
+# Python 3 (precompiled builds; includes pip)
+python = "latest"

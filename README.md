@@ -1,16 +1,24 @@
 # Dev Environment Setup
 
-Automated scripts and configuration to set up a new development environment quickly across different operating systems.
+Automated scripts and declarative manifests to set up a development workstation across **macOS** and **Linux** (`x86_64` and `arm64`/`aarch64`).
+
+---
+
+## Repository Layout
+
+- **[`shared/Brewfile`](file:///Users/null/Desktop/env/shared/Brewfile)** — Cross-platform CLI formulae installed via Homebrew on **both** macOS and Linux (`mise`, `cmake`, `kubectl`, `minikube`, `helm`, `k9s`, `ripgrep`, `fd`, `bat`, `lazygit`, `helix`).
+- **[`shared/mise.toml`](file:///Users/null/Desktop/env/shared/mise.toml)** — Global [`mise`](https://mise.jdx.dev) configuration symlinked to `~/.config/mise/config.toml` on both platforms. Manages language runtimes (`node = "latest"`, `java = "latest"` via Eclipse Temurin, `python = "latest"`), per-project environment variables, and tasks.
+- **[`shared/lib.sh`](file:///Users/null/Desktop/env/shared/lib.sh)** — Shared shell helpers for flag parsing (`--check`, `--dry-run`, `--help`), logging, Homebrew bundle/audit, and `mise` setup.
+- **[`macos/setup_mac.sh`](file:///Users/null/Desktop/env/macos/setup_mac.sh)** & **[`macos/Brewfile`](file:///Users/null/Desktop/env/macos/Brewfile)** — macOS setup script and macOS-specific formulae/casks.
+- **[`linux/setup_linux.sh`](file:///Users/null/Desktop/env/linux/setup_linux.sh)** & **[`linux/packages.conf`](file:///Users/null/Desktop/env/linux/packages.conf)** — Linux setup script and manifest for distro bootstrap packages, Flathub GUI apps, AppImages, Docker Engine, Ollama, and Zed.
 
 ---
 
 ## macOS Workstation Setup
 
-The macOS environment is automated using [`macos/setup_mac.sh`](file:///Users/null/Desktop/env/macos/setup_mac.sh), which bootstraps system dependencies and directly executes the declarative [`macos/Brewfile`](file:///Users/null/Desktop/env/macos/Brewfile).
+The macOS environment is automated using [`macos/setup_mac.sh`](file:///Users/null/Desktop/env/macos/setup_mac.sh), which bootstraps Xcode Command Line Tools and Homebrew, executes `brew bundle` against [`shared/Brewfile`](file:///Users/null/Desktop/env/shared/Brewfile) and [`macos/Brewfile`](file:///Users/null/Desktop/env/macos/Brewfile), and configures `mise`.
 
 ### Quickstart
-
-To install all applications, development tools, and global runtimes:
 
 ```bash
 chmod +x macos/setup_mac.sh
@@ -32,16 +40,16 @@ chmod +x macos/setup_mac.sh
   ./macos/setup_mac.sh --help
   ```
 
-Alternatively, if you prefer using Homebrew Bundle directly:
-```bash
-brew bundle --file=./macos/Brewfile
-```
-
 ---
 
 ## Linux Workstation Setup
 
-The Linux environment is automated using [`linux/setup_linux.sh`](linux/setup_linux.sh), which reads [`linux/packages.conf`](linux/packages.conf). GUI apps are installed from Flathub first, then official AppImages. CLI tools that have no Flatpak or AppImage are installed from distro packages or official upstream binaries. Docker Engine (not Docker Desktop) and Ollama use their official install scripts.
+The Linux environment is automated using [`linux/setup_linux.sh`](file:///Users/null/Desktop/env/linux/setup_linux.sh), which reads [`linux/packages.conf`](file:///Users/null/Desktop/env/linux/packages.conf) and [`shared/Brewfile`](file:///Users/null/Desktop/env/shared/Brewfile):
+1. Installs distro bootstrap packages (`git`, `git-lfs`, `curl`, `flatpak`, FUSE, build tools).
+2. Installs GUI apps from Flathub and official AppImages (`Cursor`, `Antigravity`).
+3. Installs Homebrew on Linux (`/home/linuxbrew/.linuxbrew`) and runs `brew bundle` against [`shared/Brewfile`](file:///Users/null/Desktop/env/shared/Brewfile).
+4. Installs Docker Engine, Ollama, and Zed using their official installers.
+5. Links [`shared/mise.toml`](file:///Users/null/Desktop/env/shared/mise.toml) and installs default runtimes (`node`, `java`, `python`).
 
 Supported families: Debian/Ubuntu, Fedora/RHEL, and Arch. Architectures: `x86_64` and `aarch64`.
 
@@ -67,83 +75,39 @@ chmod +x linux/setup_linux.sh
   ./linux/setup_linux.sh --help
   ```
 
-### Linux Software Inventory
-
-| Application | Source | Identifier / location | Notes |
-| :--- | :--- | :--- | :--- |
-| Git, Git LFS | Distro package | `git`, `git-lfs` | Installed during bootstrap |
-| Python 3, pip | Distro package | `python3`, `python3-pip` | General-purpose language and package manager |
-| Node.js | Official binary | `~/.local/opt/node` | Latest Current tarball from nodejs.org |
-| OpenJDK | Official binary | `~/.local/opt/openjdk` | Latest Eclipse Temurin GA |
-| CMake | Official binary | `~/.local/opt/cmake` | Kitware GitHub release |
-| kubectl, minikube, helm, k9s, ripgrep | Official binary | `~/.local/bin` | Upstream release artifacts |
-| Docker Engine + Compose | Official installer | `get.docker.com` | Replaces Docker Desktop on Linux |
-| Ollama | Official installer | `ollama.com/install.sh` | No Flatpak or AppImage |
-| Raspberry Pi Imager | Flathub | `org.raspberrypi.rpi-imager` | |
-| Visual Studio Code | Flathub | `com.visualstudio.code` | |
-| GitHub Desktop | Flathub | `io.github.shiftey.Desktop` | Linux community fork |
-| Firefox | Flathub | `org.mozilla.firefox` | |
-| FreeCAD | Flathub | `org.freecad.FreeCAD` | |
-| OrcaSlicer | Flathub | `com.orcaslicer.OrcaSlicer` | |
-| Blender | Flathub | `org.blender.Blender` | |
-| LibreOffice | Flathub | `org.libreoffice.LibreOffice` | |
-| Cursor | Official AppImage | `~/Applications/Cursor.AppImage` | |
-| Zed | Official installer | `zed.dev/install.sh` | |
-| Antigravity | Official AppImage | `~/Applications/Antigravity.AppImage` | Fails if Google does not publish an AppImage |
-| Maccy, Scroll Reverser, Caffeine | Skipped | — | macOS-only utilities |
-
-### Linux Post-Installation Notes
-
-- Log out and back in so `docker` group membership takes effect, then run `docker version` and `docker compose version`.
-- Reload the shell (or `source ~/.bashrc`) so `~/.local/bin` and `JAVA_HOME` are on PATH.
-- AppImages require FUSE and live in `~/Applications`.
-- Start a local cluster with `minikube start`; use `k9s` for a dashboard.
-- Test Ollama with `ollama run llama3`.
-
 ---
 
-## macOS Installed Software Inventory
+## Installed Software Inventory
 
-### CLI Tools & Runtimes (Homebrew Formulae)
-- **Node.js** (`node`) - Latest stable JavaScript runtime environment (includes `npm` and `npx`)
-- **Java OpenJDK** (`openjdk`) - Latest stable Open Java Development Kit (JDK)
-- **Docker CLI** (`docker`) & **Docker Compose** (`docker-compose`) - Command-line tools for container execution and composition
-- **Kubernetes CLI** (`kubectl`) - Command-line interface for running commands against Kubernetes clusters
-- **K9s** (`k9s`) - Interactive terminal dashboard for managing Kubernetes clusters
-- **Minikube** (`minikube`) - Local single-node Kubernetes cluster tool
-- **Helm** (`helm`) - The package manager for Kubernetes
-- **Ripgrep** (`ripgrep`) - Ultra-fast recursive line-oriented code search tool (`rg`)
-- **CMake** (`cmake`) - Cross-platform build system generator (required for C/C++ projects like `biotech`)
-- **Python 3** (`python`) - General-purpose programming language (includes `pip`)
-- **Git** (`git`) & **Git LFS** (`git-lfs`) - Version control system and large file storage
+### Language Runtimes (`shared/mise.toml` via `mise`)
+- **Node.js** (`node = "latest"`, includes `npm` and `npx`)
+- **Java OpenJDK** (`java = "latest"`, Eclipse Temurin; automatically manages `JAVA_HOME`)
+- **Python 3** (`python = "latest"`, includes `pip`)
 
-### GUI Applications (Homebrew Casks)
+### Shared CLI Tools (`shared/Brewfile` via Homebrew)
+- **mise** (`mise`) — Polyglot runtime version, environment variable, and task manager
+- **CMake** (`cmake`) — Cross-platform build system generator
+- **Kubernetes CLI** (`kubectl`), **Minikube** (`minikube`), **Helm** (`helm`), **K9s** (`k9s`)
+- **Ripgrep** (`ripgrep`)
 
-| Application | Cask Identifier | Category | Purpose |
+### GUI Applications & Platform Services
+
+| Application | macOS (`macos/Brewfile`) | Linux (`linux/packages.conf`) | Category |
 | :--- | :--- | :--- | :--- |
-| **Docker Desktop** | `docker-desktop` | Containers & DevOps | GUI application, container daemon, and built-in Kubernetes engine |
-| **Raspberry Pi Imager** | `raspberry-pi-imager` | Embedded & Hardware | Official utility to flash and preconfigure OS images to SD cards |
-| **Cursor** | `cursor` | AI & Development | AI-first code editor built on VS Code |
-| **Zed** | `zed` | AI & Development | High-performance, multiplayer code editor |
-| **Visual Studio Code** | `visual-studio-code` | AI & Development | Extensible code editor from Microsoft |
-| **GitHub Desktop** | `github` | AI & Development | Official GUI client for GitHub repositories |
-| **Ollama** | `ollama-app` | AI & Development | Local LLM runner and CLI tool |
-| **Antigravity** | `antigravity` | AI & Development | Agent orchestration platform |
-| **Firefox** | `firefox` | Web Browsers | Mozilla Firefox browser |
-| **FreeCAD** | `freecad` | 3D & CAD | 3D parametric modeler |
-| **OrcaSlicer** | `orcaslicer` | 3D & CAD | Slicer for 3D printers |
-| **Blender** | `blender` | 3D & CAD | 3D creation and mesh modeling suite |
-| **LibreOffice** | `libreoffice` | Office & Productivity | Free and open-source office productivity suite |
-| **Maccy** | `maccy` | Utilities | Lightweight keyboard-driven clipboard manager |
-| **Scroll Reverser** | `scroll-reverser` | Utilities | Independent scrolling for mouse & trackpad |
-| **Caffeine** | `caffeine` | Utilities | Menu bar utility to keep system awake |
-
----
-
-## Post-Installation Notes & macOS Permissions
-
-After running the setup script, grant Accessibility permissions to system utilities that require window/keyboard hooks:
-1. Open **System Settings** → **Privacy & Security** → **Accessibility**
-2. Toggle on permissions for:
-   - **Maccy**
-   - **Scroll Reverser**
+| **Docker** | `docker-desktop` (Cask) + `docker` / `docker-compose` | `get.docker.com` (`docker-engine` + Compose plugin) | Containers & DevOps |
+| **Freelens** | `freelens` (Cask) | `app.freelens.Freelens` (Flathub) | Kubernetes IDE |
+| **Beekeeper Studio** | `beekeeper-studio` (Cask) | `io.beekeeperstudio.Studio` (Flathub) | Database Manager |
+| **Insomnia** | `insomnia` (Cask) | `rest.insomnia.Insomnia` (Flathub) | API Client |
+| **Cursor** | `cursor` (Cask) | Official AppImage (`~/Applications/Cursor.AppImage`) | AI & Code Editors |
+| **Zed** | `zed` (Cask) | Official installer (`zed.dev/install.sh`) | AI & Code Editors |
+| **Visual Studio Code** | `visual-studio-code` (Cask) | `com.visualstudio.code` (Flathub) | AI & Code Editors |
+| **GitHub Desktop** | `github` (Cask) | `io.github.shiftey.Desktop` (Flathub) | AI & Code Editors |
+| **Ollama** | `ollama-app` (Cask) | Official installer (`ollama.com/install.sh`) | Local LLM Runner |
+| **Antigravity** | `antigravity` (Cask) | Official AppImage (`~/Applications/Antigravity.AppImage`) | Agent Orchestration |
+| **Raspberry Pi Imager** | `raspberry-pi-imager` (Cask) | `org.raspberrypi.rpi-imager` (Flathub) | Embedded & Hardware |
+| **Firefox** | `firefox` (Cask) | `org.mozilla.firefox` (Flathub) | Web Browser |
+| **FreeCAD** | `freecad` (Cask) | `org.freecad.FreeCAD` (Flathub) | 3D & CAD |
+| **OrcaSlicer** | `orcaslicer` (Cask) | `com.orcaslicer.OrcaSlicer` (Flathub) | 3D & CAD |
+| **Blender** | `blender` (Cask) | `org.blender.Blender` (Flathub) | 3D & CAD |
+| **LibreOffice** | `libreoffice` (Cask) | `org.libreoffice.LibreOffice` (Flathub) | Office Suite |
+| **Maccy, Scroll Reverser, Caffeine** | Casks | Skipped (macOS-only) | macOS Utilities |
