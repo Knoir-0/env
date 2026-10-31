@@ -111,3 +111,9 @@ chmod +x linux/setup_linux.sh
 | **Blender** | `blender` (Cask) | `org.blender.Blender` (Flathub) | 3D & CAD |
 | **LibreOffice** | `libreoffice` (Cask) | `org.libreoffice.LibreOffice` (Flathub) | Office Suite |
 | **Maccy, Scroll Reverser, Caffeine** | Casks | Skipped (macOS-only) | macOS Utilities |
+
+---
+
+## License
+
+Licensed under the [MIT License](LICENSE).
